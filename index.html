@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LanguaAssist – Local Language Learning Assistant Using NLP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* ── Animations ── */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes dropdownIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes recordingPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .7; transform: scale(1.1); }
+    }
+    @keyframes micWave {
+      0%   { box-shadow: 0 0 0 0 rgba(239,68,68,.6); }
+      70%  { box-shadow: 0 0 0 18px rgba(239,68,68,0); }
+      100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+    }
+
+    .animate-fade-in-up { animation: fadeInUp .5s ease both; }
+    .animate-dropdown   { animation: dropdownIn .2s ease both; }
+    .animate-spin-slow  { animation: spin 1s linear infinite; }
+    .mic-glow           { animation: micWave 1.4s ease-out infinite; box-shadow: 0 0 20px rgba(37,99,235,.4); }
+    .recording-pulse    { animation: recordingPulse 1.5s cubic-bezier(.4,0,.6,1) infinite; }
+
+    /* smooth hover scale via CSS */
+    .btn-mic { transition: transform .15s ease; }
+    .btn-mic:hover  { transform: scale(1.05); }
+    .btn-mic:active { transform: scale(0.95); }
+
+    /* ── Silence detection pill ── */
+    .silence-pill {
+      position: absolute; bottom: 76px; right: 14px;
+      font-size: 11px; font-weight: 700; padding: 3px 10px;
+      border-radius: 99px; letter-spacing: .02em;
+      transition: opacity .3s ease, transform .3s ease;
+      pointer-events: none; white-space: nowrap;
+    }
+    .silence-pill.hidden   { opacity: 0; transform: translateY(4px); }
+    .silence-pill.speaking { background: #dcfce7; color: #16a34a; opacity: 1; transform: translateY(0); }
+    .silence-pill.silent   { background: #fef9c3; color: #b45309; opacity: 1; transform: translateY(0);
+      animation: pillPulse .55s ease infinite alternate; }
+    @keyframes pillPulse { from { opacity: .65 } to { opacity: 1 } }
+
+    /* ── Step progress ── */
+    .step-bar { display:flex; align-items:center; gap:0; width:100%; }
+    .step-item {
+      flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
+      position:relative;
+    }
+    .step-item:not(:last-child)::after {
+      content:''; position:absolute; top:11px; left:50%; width:100%; height:2px;
+      background:#e2e8f0; z-index:0; transition: background .4s ease;
+    }
+    .step-item.done:not(:last-child)::after  { background:#2563eb; }
+    .step-item.active:not(:last-child)::after { background:#bfdbfe; }
+    .step-dot {
+      width:22px; height:22px; border-radius:50%; border:2px solid #e2e8f0;
+      background:#fff; display:flex; align-items:center; justify-content:center;
+      position:relative; z-index:1; transition: all .3s ease; flex-shrink:0;
+    }
+    .step-item.done  .step-dot { background:#2563eb; border-color:#2563eb; }
+    .step-item.active .step-dot { background:#fff; border-color:#2563eb; animation: stepPulse 1s ease infinite; }
+    .step-item.idle   .step-dot { background:#f8fafc; border-color:#e2e8f0; }
+    @keyframes stepPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(37,99,235,.4) } 50%{ box-shadow:0 0 0 5px rgba(37,99,235,0) } }
+    .step-dot svg { width:11px; height:11px; }
+    .step-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; white-space:nowrap; transition:color .3s; }
+    .step-item.done   .step-label  { color:#2563eb; }
+    .step-item.active .step-label  { color:#1d4ed8; }
+
+    /* ── Empty state ── */
+    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:8px; height:100%; min-height:100px; opacity:.45; pointer-events:none; }
+    .empty-state svg { width:32px; height:32px; color:#94a3b8; }
+    .empty-state p { font-size:12px; color:#94a3b8; font-weight:500; text-align:center; }
+
+    /* ── Output header badge ── */
+    .output-badge {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:5px 12px; border-radius:99px; font-size:12px; font-weight:700;
+      background:linear-gradient(135deg,#eff6ff,#f0fdf4);
+      border:1.5px solid #bfdbfe; color:#1d4ed8; letter-spacing:.02em;
+      margin-bottom:4px;
+    }
+
+    /* ── Tag tooltip ── */
+    .tag-wrap { position:relative; display:inline-block; }
+    .tag-tip {
+      display:none; position:absolute; bottom:calc(100% + 6px); left:50%;
+      transform:translateX(-50%); background:#1e293b; color:#f8fafc;
+      font-size:11px; padding:5px 9px; border-radius:7px; white-space:nowrap;
+      z-index:99; font-weight:500; pointer-events:none;
+    }
+    .tag-wrap:hover .tag-tip { display:block; }
+
+    /* scrollbar for dropdown */
+    .dropdown-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+    .dropdown-scroll::-webkit-scrollbar       { width: 4px; }
+    .dropdown-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+
+    body { background-color: #f8fafc; color: #0f172a; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-14 items-center">
+        <div class="flex items-center gap-2">
+          <div class="bg-blue-600 p-1.5 rounded-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" class="text-white w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/>
+            </svg>
+          </div>
+          <span class="font-display font-bold text-lg tracking-tight text-slate-900">LanguaAssist</span>
+        </div>
+        
+      </div>
+    </div>
+  </nav>
+
+  <!-- ─── MAIN ─── -->
+  <main class="flex-grow">
+
+    <!-- Hero -->
+    <section class="relative pt-10 pb-10 overflow-hidden">
+      <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <div class="animate-fade-in-up mb-8">
+          <h1 class="font-display text-3xl md:text-4xl font-bold text-slate-900 tracking-tight">
+            Language Learning
+            <span class="text-blue-600"> Assistant</span>
+          </h1>
+          <p class="text-slate-500 text-sm mt-2">Speak in any Indian language · Whisper transcribes · AI translates</p>
+        </div>
+
+        <!-- ── Main App Card ── -->
+        <div class="max-w-3xl mx-auto bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden animate-fade-in-up" style="animation-delay:.1s">
+          <div class="p-6 md:p-10">
+
+            <!-- FULL WIDTH: Language Pair Row -->
+            <div class="w-full">
+
+              <!-- From → Swap → To bar -->
+              <div class="flex items-end gap-2 mb-5">
+
+                <!-- FROM picker -->
+                <div class="flex-1 relative" id="from-wrapper">
+                  <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">From</div>
+                  <button id="from-btn" onclick="toggleFromDropdown()"
+                    class="w-full flex items-center justify-between px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-left hover:border-blue-200 hover:bg-blue-50/30 transition-all">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span id="from-native" class="text-base font-semibold truncate">ಕನ್ನಡ</span>
+                      <span id="from-name" class="text-xs text-slate-400 hidden sm:block">Kannada</span>
+                    </div>
+                    <svg id="from-chevron" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-400 transition-transform duration-200 flex-shrink-0 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                  </button>
+                  <div id="from-menu" class="hidden absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl z-30 max-h-60 overflow-y-auto dropdown-scroll animate-dropdown"></div>
+                </div>
+
+                <!-- SWAP button -->
+                <div class="flex-shrink-0 pb-0.5">
+                  <button id="swap-btn" onclick="swapLanguages()" title="Swap languages"
+                    class="w-10 h-10 rounded-full bg-slate-100 border-2 border-slate-200 flex items-center justify-center text-slate-500 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600 transition-all active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                    </svg>
+                  </button>
+                </div>
+
+                <!-- TO picker -->
+                <div class="flex-1 relative" id="to-wrapper">
+                  <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 pl-1">To</div>
+                  <button id="to-btn" onclick="toggleToDropdown()"
+                    class="w-full flex items-center justify-between px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-left hover:border-emerald-200 hover:bg-emerald-50/30 transition-all">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span id="to-native" class="text-base font-semibold truncate">English</span>
+                      <span id="to-name" class="text-xs text-slate-400 hidden sm:block">English</span>
+                    </div>
+                    <svg id="to-chevron" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-400 transition-transform duration-200 flex-shrink-0 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                  </button>
+                  <div id="to-menu" class="hidden absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl z-30 max-h-60 overflow-y-auto dropdown-scroll animate-dropdown"></div>
+                </div>
+
+              </div>
+
+              <!-- ── Step Progress Indicator ── -->
+              <div id="step-progress" class="hidden mb-5 px-2">
+                <div class="step-bar">
+                  <div class="step-item idle" id="step-1">
+                    <div class="step-dot">
+                      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/></svg>
+                    </div>
+                    <span class="step-label">Record</span>
+                  </div>
+                  <div class="step-item idle" id="step-2">
+                    <div class="step-dot">
+                      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                    </div>
+                    <span class="step-label">Transcribe</span>
+                  </div>
+                  <div class="step-item idle" id="step-3">
+                    <div class="step-dot">
+                      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10"/></svg>
+                    </div>
+                    <span class="step-label">Translate</span>
+                  </div>
+                  <div class="step-item idle" id="step-4">
+                    <div class="step-dot">
+                      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    </div>
+                    <span class="step-label">Done</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Two-column: Input + Output -->
+              <div class="flex flex-col md:flex-row gap-5">
+
+                <!-- INPUT -->
+                <div class="flex-1">
+                  <div class="relative min-h-[180px] bg-slate-50 rounded-2xl border-2 border-slate-200 p-4 flex flex-col">
+                    <div class="flex items-center gap-2 mb-3">
+                      <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Speech Input</span>
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-100 text-blue-600 text-[10px] font-bold uppercase tracking-wide">
+                        <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/></svg>
+                        Whisper AI
+                      </span>
+                    </div>
+
+                    <!-- Empty state -->
+                    <div id="input-empty" class="empty-state flex-1">
+                      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 01-14 0v-2M12 19v4m-4 0h8"/>
+                      </svg>
+                      <p>Press the mic and speak<br/>in <span id="from-lang-hint">your language</span></p>
+                    </div>
+
+                    <p id="transcript-text" class="hidden text-base text-slate-900 leading-relaxed flex-1"></p>
+
+                    <!-- Silence detection pill -->
+                    <div id="silence-pill" class="silence-pill hidden"></div>
+
+                    <div class="absolute bottom-4 right-4 flex flex-col items-end gap-1">
+                      <span id="rec-timer" class="hidden text-sm font-mono font-bold text-red-500"></span>
+                      <button id="mic-btn" onclick="toggleRecording()" title="Click to record · Powered by Whisper Large V3"
+                        class="btn-mic relative w-14 h-14 rounded-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">
+                        <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" class="text-white w-5 h-5 relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 01-14 0v-2M12 19v4m-4 0h8"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ARROW (desktop) -->
+                <div class="hidden md:flex items-center justify-center flex-shrink-0 mt-8">
+                  <div class="bg-gradient-to-r from-blue-100 to-emerald-100 p-2.5 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="text-blue-400 w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+                    </svg>
+                  </div>
+                </div>
+
+                <!-- OUTPUT -->
+                <div class="flex-1">
+                  <!-- Badge header (replaces dark bg-slate-900) -->
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="output-badge">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                        <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/>
+                      </svg>
+                      <span id="output-header-text">English Translation</span>
+                    </div>
+                    <!-- Copy button (top-right of output header) -->
+                    <button id="copy-top-btn" onclick="copyTranslation()" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 border border-slate-200 hover:border-blue-200 transition-all">
+                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                      <span id="copy-label">Copy</span>
+                    </button>
+                  </div>
+
+                  <div class="relative min-h-[180px] bg-slate-50 rounded-2xl border-2 border-slate-200 p-4 flex flex-col">
+                    <div id="output-label" class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Output</div>
+
+                    <!-- Loading state (replaced by step bar, kept minimal) -->
+                    <div id="translating-indicator" class="hidden items-center gap-2 text-slate-400 text-sm italic">
+                      <svg class="w-4 h-4 text-blue-500 animate-spin-slow" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                      </svg>
+                      Translating…
+                    </div>
+
+                    <!-- Empty state -->
+                    <div id="output-empty" class="empty-state flex-1">
+                      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/>
+                      </svg>
+                      <p>Translation will appear<br/>here after you speak</p>
+                    </div>
+
+                    <p id="translation-text" class="hidden text-base text-slate-900 leading-relaxed flex-1 pr-2"></p>
+
+                    <!-- Speak + copy row bottom-right -->
+                    <div class="absolute bottom-4 right-4 flex items-center gap-2">
+                      <button id="speak-btn" onclick="speakText()"
+                        class="hidden p-2.5 bg-white border-2 border-slate-200 rounded-full text-slate-500 hover:text-blue-600 hover:border-blue-300 transition-all shadow-sm" title="Read aloud">
+                        <svg id="speak-icon" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                          <path d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div><!-- end two-column -->
+
+            </div><!-- end lang bar wrapper -->
+
+            <!-- Error -->
+            <div id="error-box" class="hidden mt-5 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></div>
+              <span id="error-text"></span>
+            </div>
+
+            <!-- ── Confidence Panel ── -->
+            <div id="confidence-panel" class="hidden mt-5 animate-fade-in-up">
+              <div id="conf-card" class="rounded-2xl border-2 p-5 transition-all duration-500"></div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="border-t border-slate-100 py-5 text-center">
+    <p class="text-xs text-slate-400">LanguaAssist · made by <span class="font-semibold text-slate-500">Naitik Sharma</span> · Powered by Groq</p>
+  </footer>
+  <!-- ─── SCRIPT ─── -->
+  <script>
+    const GROQ_API_KEY = "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";
+
+    // All supported languages (same 10 Indian + English)
+    const LANGUAGES = [
+      { name: "English",   code: "en-US", nativeName: "English",    region: "Global" },
+      { name: "Hindi",     code: "hi-IN", nativeName: "हिन्दी",    region: "Northern & Central India" },
+      { name: "Bengali",   code: "bn-IN", nativeName: "বাংলা",     region: "West Bengal & Northeast" },
+      { name: "Marathi",   code: "mr-IN", nativeName: "मराठी",     region: "Maharashtra" },
+      { name: "Telugu",    code: "te-IN", nativeName: "తెలుగు",    region: "Andhra Pradesh & Telangana" },
+      { name: "Tamil",     code: "ta-IN", nativeName: "தமிழ்",     region: "Tamil Nadu" },
+      { name: "Gujarati",  code: "gu-IN", nativeName: "ગુજરાતી",   region: "Gujarat" },
+      { name: "Urdu",      code: "ur-IN", nativeName: "اردو",      region: "Spoken across multiple states" },
+      { name: "Kannada",   code: "kn-IN", nativeName: "ಕನ್ನಡ",    region: "Karnataka" },
+      { name: "Odia",      code: "or-IN", nativeName: "ଓଡ଼ିଆ",    region: "Odisha" },
+      { name: "Malayalam", code: "ml-IN", nativeName: "മലയാളം",   region: "Kerala" },
+    ];
+
+    // State
+    let fromLang = LANGUAGES[8]; // Kannada
+    let toLang   = LANGUAGES[0]; // English
+    let isRecording = false;
+    let currentTranslation = "";
+    let recTimerInterval = null;
+    let fromOpen = false, toOpen = false;
+
+    // DOM refs
+    const transcriptText  = document.getElementById("transcript-text");
+    const translationText = document.getElementById("translation-text");
+    const transIndicator  = document.getElementById("translating-indicator");
+    const speakBtn        = document.getElementById("speak-btn");
+    const micBtn          = document.getElementById("mic-btn");
+    const micIcon         = document.getElementById("mic-icon");
+    const errorBox        = document.getElementById("error-box");
+    const errorText       = document.getElementById("error-text");
+
+    // ── Build dropdowns ──
+    function buildDropdown(menuId, selectedLang, onSelect) {
+      const menu = document.getElementById(menuId);
+      menu.innerHTML = "";
+      LANGUAGES.forEach(lang => {
+        const item = document.createElement("div");
+        item.className = "flex flex-col px-4 py-2.5 cursor-pointer hover:bg-slate-50 border-b border-slate-50 last:border-0 transition-colors" +
+          (lang.name === selectedLang.name ? " bg-blue-50" : "");
+        item.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-sm text-slate-900">${lang.name}</span>
+            <span class="text-slate-400 text-xs">${lang.nativeName}</span>
+          </div>
+          <span class="text-xs text-slate-400 mt-0.5">${lang.region}</span>
+        `;
+        item.addEventListener("click", () => onSelect(lang));
+        menu.appendChild(item);
+      });
+    }
+
+    function buildFromDropdown() { buildDropdown("from-menu", fromLang, selectFromLang); }
+    function buildToDropdown()   { buildDropdown("to-menu",   toLang,   selectToLang);   }
+
+    function selectFromLang(lang) {
+      fromLang = lang;
+      document.getElementById("from-native").textContent = lang.nativeName;
+      document.getElementById("from-name").textContent   = lang.name;
+      closeAllDropdowns();
+      updateOutputHeader();
+      setupRecognition();
+    }
+
+    function selectToLang(lang) {
+      toLang = lang;
+      document.getElementById("to-native").textContent = lang.nativeName;
+      document.getElementById("to-name").textContent   = lang.name;
+      closeAllDropdowns();
+      updateOutputHeader();
+    }
+
+    function updateOutputHeader() {
+      document.getElementById("output-header-text").textContent = toLang.name + " Translation";
+      document.getElementById("output-label").textContent       = toLang.name + " Output";
+      const hint = document.getElementById("from-lang-hint");
+      if (hint) hint.textContent = fromLang.name;
+    }
+
+    // ── Step Progress ──
+    function setStep(n) {
+      document.getElementById("step-progress").classList.remove("hidden");
+      [1,2,3,4].forEach(i => {
+        const el = document.getElementById("step-" + i);
+        if (!el) return;
+        el.className = i < n ? "step-item done" : i === n ? "step-item active" : "step-item idle";
+      });
+    }
+    function hideSteps() {
+      const sp = document.getElementById("step-progress");
+      if (sp) sp.classList.add("hidden");
+    }
+
+    // ── Copy ──
+    function copyTranslation() {
+      if (!currentTranslation) return;
+      navigator.clipboard.writeText(currentTranslation).then(() => {
+        const btn = document.getElementById("copy-top-btn");
+        const lbl = document.getElementById("copy-label");
+        if (!btn || !lbl) return;
+        lbl.textContent = "✓ Copied!";
+        btn.style.background = "#dcfce7"; btn.style.borderColor = "#86efac"; btn.style.color = "#16a34a";
+        setTimeout(() => {
+          lbl.textContent = "Copy";
+          btn.style.background = ""; btn.style.borderColor = ""; btn.style.color = "";
+        }, 2000);
+      });
+    }
+
+    // ── Swap ──
+    function swapLanguages() {
+      const btn = document.getElementById("swap-btn");
+      btn.style.transform = "rotate(180deg)";
+      setTimeout(() => btn.style.transform = "", 350);
+
+      const tmp = fromLang;
+      fromLang = toLang;
+      toLang   = tmp;
+
+      document.getElementById("from-native").textContent = fromLang.nativeName;
+      document.getElementById("from-name").textContent   = fromLang.name;
+      document.getElementById("to-native").textContent   = toLang.nativeName;
+      document.getElementById("to-name").textContent     = toLang.name;
+
+      // Swap displayed text if both have content
+      const srcEl = document.getElementById("transcript-text");
+      const tgtEl = document.getElementById("translation-text");
+      const srcHasText = !srcEl.classList.contains("hidden");
+      const tgtHasText = !tgtEl.classList.contains("hidden");
+      const src = srcEl.textContent;
+      const tgt = tgtEl.textContent;
+
+      if (srcHasText && tgtHasText) {
+        setTranscript(tgt);
+        setTranslation(src);
+      } else {
+        setTranscript(""); setTranslation("");
+      }
+
+      updateOutputHeader();
+      setupRecognition();
+      buildFromDropdown();
+      buildToDropdown();
+      hideConfidence();
+    }
+
+    // ── Dropdown toggles ──
+    function toggleFromDropdown() {
+      if (fromOpen) { closeAllDropdowns(); return; }
+      buildFromDropdown();
+      closeAllDropdowns();
+      fromOpen = true;
+      const menu = document.getElementById("from-menu");
+      menu.classList.remove("hidden");
+      menu.classList.add("animate-dropdown");
+      document.getElementById("from-chevron").style.transform = "rotate(180deg)";
+    }
+
+    function toggleToDropdown() {
+      if (toOpen) { closeAllDropdowns(); return; }
+      buildToDropdown();
+      closeAllDropdowns();
+      toOpen = true;
+      const menu = document.getElementById("to-menu");
+      menu.classList.remove("hidden");
+      menu.classList.add("animate-dropdown");
+      document.getElementById("to-chevron").style.transform = "rotate(180deg)";
+    }
+
+    function closeAllDropdowns() {
+      fromOpen = toOpen = false;
+      document.getElementById("from-menu").classList.add("hidden");
+      document.getElementById("to-menu").classList.add("hidden");
+      document.getElementById("from-chevron").style.transform = "";
+      document.getElementById("to-chevron").style.transform = "";
+    }
+
+    document.addEventListener("click", e => {
+      if (!document.getElementById("from-wrapper").contains(e.target) &&
+          !document.getElementById("to-wrapper").contains(e.target)) closeAllDropdowns();
+    });
+
+    // ── Whisper language code map (ISO 639-1) ──
+    const WHISPER_LANG = {
+      "en-US": "en", "hi-IN": "hi", "bn-IN": "bn", "mr-IN": "mr",
+      "te-IN": "te", "ta-IN": "ta", "gu-IN": "gu", "ur-IN": "ur",
+      "kn-IN": "kn", "or-IN": "or", "ml-IN": "ml"
+    };
+
+    // ── MediaRecorder state ──
+    let mediaRecorder = null;
+    let audioChunks   = [];
+    let audioStream   = null;
+    let audioCtx      = null;
+    let analyserNode  = null;
+    let animFrame     = null;
+    let silenceTimer  = null;
+    let hasSpokenOnce = false;
+
+    const SILENCE_THRESHOLD = 18;   // RMS (0–255); above = speech, below = silence
+    const SILENCE_DELAY_MS  = 1600; // ms quiet → auto stop
+
+    function startVisualizer(stream) {
+      // AudioContext must be created AFTER setRecording(true) so mic-bars exist
+      audioCtx     = new (window.AudioContext || window.webkitAudioContext)();
+      const src    = audioCtx.createMediaStreamSource(stream);
+      analyserNode = audioCtx.createAnalyser();
+      analyserNode.fftSize = 64;
+      src.connect(analyserNode);
+
+      const buf  = new Uint8Array(analyserNode.frequencyBinCount);
+
+      function draw() {
+        animFrame = requestAnimationFrame(draw);
+        analyserNode.getByteFrequencyData(buf);
+
+        // ── Waveform bars (query fresh each frame so they always exist) ──
+        const bars = document.getElementById("mic-bars");
+        if (bars) {
+          const kids = bars.children;
+          for (let i = 0; i < kids.length; i++) {
+            const v = buf[Math.floor(i * buf.length / kids.length)] || 0;
+            kids[i].style.height = Math.max(3, (v / 255) * 22) + "px";
+          }
+        }
+
+        // ── Silence detection — RMS of all bins ──
+        const rms = Math.sqrt(buf.reduce((s, v) => s + v * v, 0) / buf.length);
+        const pill = document.getElementById("silence-pill");
+
+        if (rms > SILENCE_THRESHOLD) {
+          // Voice detected
+          hasSpokenOnce = true;
+          if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+          if (pill) { pill.textContent = "🎙 Listening…"; pill.className = "silence-pill speaking"; }
+        } else if (hasSpokenOnce && !silenceTimer) {
+          // Silence just started — begin countdown
+          if (pill) { pill.textContent = "⏸ Auto-stopping…"; pill.className = "silence-pill silent"; }
+          silenceTimer = setTimeout(() => {
+            if (isRecording) {
+              // Auto-stop: UI first so button resets immediately
+              stopVisualizer();
+              setRecording(false);
+              mediaRecorder?.stop();
+              audioStream?.getTracks().forEach(t => t.stop());
+            }
+          }, SILENCE_DELAY_MS);
+        }
+      }
+      draw();
+    }
+
+    function stopVisualizer() {
+      if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      hasSpokenOnce = false;
+      if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+      const pill = document.getElementById("silence-pill");
+      if (pill) pill.className = "silence-pill hidden";
+    }
+
+    async function toggleRecording() {
+      if (isRecording) {
+        stopVisualizer();
+        setRecording(false);
+        mediaRecorder?.stop();
+        audioStream?.getTracks().forEach(t => t.stop());
+        return;
+      }
+
+      clearError();
+      setTranscript("");
+      setTranslation("");
+      hideConfidence();
+      audioChunks = [];
+
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch {
+        showError("Microphone access denied. Please allow microphone permission and try again.");
+        return;
+      }
+
+      const mimeType = ["audio/webm;codecs=opus","audio/webm","audio/ogg","audio/mp4"]
+        .find(m => MediaRecorder.isTypeSupported(m)) || "";
+
+      mediaRecorder = new MediaRecorder(audioStream, mimeType ? { mimeType } : {});
+
+      mediaRecorder.ondataavailable = e => {
+        if (e.data?.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        if (!audioChunks.length) return;
+        const blob = new Blob(audioChunks, { type: mimeType || "audio/webm" });
+
+        const transcriptEl = document.getElementById("transcript-text");
+        const inputEmpty   = document.getElementById("input-empty");
+        if (transcriptEl) { transcriptEl.textContent = "⏳ Transcribing…"; transcriptEl.className = "text-sm text-blue-500 italic"; transcriptEl.classList.remove("hidden"); }
+        if (inputEmpty)   inputEmpty.style.display = "none";
+        setStep(2);
+
+        try {
+          const fd = new FormData();
+          fd.append("file", blob, "audio.webm");
+          fd.append("model", "whisper-large-v3");
+          fd.append("language", WHISPER_LANG[fromLang.code] || "hi");
+          fd.append("response_format", "json");
+
+          const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${GROQ_API_KEY}` },
+            body: fd
+          });
+
+          if (!res.ok) {
+            const e = await res.json().catch(() => ({}));
+            throw new Error(e?.error?.message || `Whisper API ${res.status}`);
+          }
+
+          const data = await res.json();
+          const transcript = data?.text?.trim();
+          if (!transcript) throw new Error("No speech detected in the recording.");
+
+          setTranscript(transcript);
+          translateText(transcript);
+
+        } catch (err) {
+          showError("Transcription failed: " + err.message);
+          setTranscript("");
+        }
+      };
+
+      mediaRecorder.start(100); // smaller chunks = more accurate silence detection
+
+      // ── CRITICAL: setRecording FIRST so mic-bars exist before startVisualizer ──
+      setStep(1);
+      setRecording(true);
+      startVisualizer(audioStream);
+    }
+
+    function setupRecognition() { /* no-op — using Whisper */ }
+
+    function setRecording(val) {
+      isRecording = val;
+      const timerEl = document.getElementById("rec-timer");
+      if (val) {
+        let secs = 0;
+        timerEl.classList.remove("hidden"); timerEl.textContent = "0s";
+        recTimerInterval = setInterval(() => { secs++; timerEl.textContent = secs + "s"; }, 1000);
+        micBtn.classList.replace("bg-blue-600", "bg-red-500");
+        micBtn.classList.remove("hover:bg-blue-700"); micBtn.classList.add("mic-glow");
+        // Replace mic icon with live waveform bars
+        micIcon.innerHTML = `
+          <g id="mic-bars" style="display:flex;gap:2px;align-items:center;justify-content:center;">
+            ${[0,1,2,3,4].map(i=>`<rect x="${4+i*4}" y="8" width="3" height="8" rx="1.5" fill="white" style="transition:height .08s ease;transform-origin:center bottom;transform:translateY(${i%2?-2:0}px)"/>`).join("")}
+          </g>`;
+        // Actually replace with HTML div bars since SVG animation is limited
+        micIcon.innerHTML = "";
+        const barsDiv = document.createElement("div");
+        barsDiv.id = "mic-bars";
+        barsDiv.style.cssText = "display:flex;gap:2px;align-items:flex-end;height:24px;";
+        for (let i = 0; i < 5; i++) {
+          const bar = document.createElement("div");
+          bar.style.cssText = `width:3px;height:4px;background:white;border-radius:2px;transition:height .08s ease;`;
+          barsDiv.appendChild(bar);
+        }
+        micBtn.appendChild(barsDiv);
+        let p = document.getElementById("mic-pulse");
+        if (!p) { p = document.createElement("div"); p.id = "mic-pulse"; p.className = "absolute inset-0 rounded-full bg-red-500 recording-pulse"; micBtn.prepend(p); }
+      } else {
+        clearInterval(recTimerInterval); timerEl.classList.add("hidden");
+        micBtn.classList.replace("bg-red-500", "bg-blue-600");
+        micBtn.classList.add("hover:bg-blue-700"); micBtn.classList.remove("mic-glow");
+        document.getElementById("mic-bars")?.remove();
+        micIcon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 01-14 0v-2M12 19v4m-4 0h8"/>`;
+        document.getElementById("mic-pulse")?.remove();
+      }
+    }
+
+    // ═══════════════════════════════════════════
+    //  TRANSLATION + BACK-TRANSLATION CONFIDENCE
+    // ═══════════════════════════════════════════
+
+    async function groqCall(systemPrompt, userPrompt) {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_API_KEY}` },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          max_tokens: 1024,
+          temperature: 0,        // deterministic — no randomness
+          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }]
+        })
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error?.message || `API ${res.status}`); }
+      const d = await res.json();
+      return d?.choices?.[0]?.message?.content?.trim() || "";
+    }
+
+    // Similarity maths
+    function levenshtein(a, b) {
+      const m = a.length, n = b.length;
+      const dp = Array.from({ length: m+1 }, (_, i) => [i]);
+      for (let j = 0; j <= n; j++) dp[0][j] = j;
+      for (let i = 1; i <= m; i++)
+        for (let j = 1; j <= n; j++)
+          dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+      return dp[m][n];
+    }
+    function charSim(a,b)  { if(!a&&!b) return 1; return 1-levenshtein(a,b)/Math.max(a.length,b.length); }
+    function tokenJaccard(a,b) {
+      const ta=new Set(a.toLowerCase().split(/\s+/).filter(Boolean)), tb=new Set(b.toLowerCase().split(/\s+/).filter(Boolean));
+      const inter=[...ta].filter(t=>tb.has(t)).length, union=new Set([...ta,...tb]).size;
+      return union===0?0:inter/union;
+    }
+    function bigram(a,b) {
+      const bg=s=>{const t=s.toLowerCase().replace(/\s+/g," ").trim(),o=new Set();for(let i=0;i<t.length-1;i++)o.add(t.slice(i,i+2));return o;};
+      const ba=bg(a),bb=bg(b); if(!ba.size&&!bb.size) return 1;
+      return 2*[...ba].filter(g=>bb.has(g)).length/(ba.size+bb.size);
+    }
+    function lenRatio(a,b) { const la=a.length||1,lb=b.length||1; return Math.min(la,lb)/Math.max(la,lb); }
+
+    function computeConfidence(orig, back) {
+      const raw = charSim(orig,back)*0.30 + tokenJaccard(orig,back)*0.30 + bigram(orig,back)*0.25 + lenRatio(orig,back)*0.15;
+      return Math.round(10 + raw * 87);
+    }
+
+    function tagsFromScore(pct) {
+      if (pct>=88) return { label:"Highly Accurate",    acc:"Lexically Precise",    flu:"Natural Flow",     ctx:"Context Preserved",    reason:"Back-translation closely mirrors the original — semantic meaning, vocabulary and structure are all well preserved." };
+      if (pct>=72) return { label:"Likely Correct",     acc:"Good Word Choice",      flu:"Mostly Fluent",    ctx:"Context Preserved",    reason:"Back-translation matches the original well with minor phrasing differences that don't affect meaning." };
+      if (pct>=55) return { label:"Mostly Accurate",    acc:"Approximate",           flu:"Mostly Fluent",    ctx:"Context Approximated", reason:"Moderate divergence — core meaning is preserved but some nuance may be lost." };
+      if (pct>=38) return { label:"Partially Accurate", acc:"Approximate",           flu:"Slightly Awkward", ctx:"Context Approximated", reason:"Noticeable differences suggest idioms or regional slang may not be fully captured." };
+      return             { label:"May Need Review",     acc:"Literal / Approximate", flu:"Stiff",            ctx:"Context May Be Lost",  reason:"Significant divergence — heavy dialect, unclear speech or expressions without direct equivalents." };
+    }
+
+    async function translateText(text) {
+      transIndicator.classList.remove("hidden"); transIndicator.classList.add("flex");
+      translationText.classList.add("hidden");
+      hideConfidence();
+
+      let translated = "";
+      try {
+        setStep(3);
+        // STEP 1: Forward translation (fromLang → toLang)
+        translated = await groqCall(
+          `You are a professional certified translator specialising in Indian languages.
+TASK: Translate the input text from ${fromLang.name} to ${toLang.name}.
+STRICT RULES:
+- Output ONLY the translated text. No preamble, no explanation, no quotes, no notes.
+- Preserve meaning exactly — do not add, remove, or paraphrase anything.
+- Keep proper nouns, names, and numbers as-is unless they have a standard translation.
+- If input contains mixed languages (code-switching), translate each part appropriately.
+- Do NOT translate to English unless ${toLang.name} is English.`,
+          `Translate this ${fromLang.name} text to ${toLang.name}: ${text}`
+        );
+        if (!translated) throw new Error("Empty translation response");
+
+        setTranslation(translated);
+        setStep(4);
+        transIndicator.classList.add("hidden"); transIndicator.classList.remove("flex");
+        translationText.classList.remove("hidden");
+
+        // STEP 2: Show loading state for confidence
+        const panel = document.getElementById("confidence-panel");
+        const card  = document.getElementById("conf-card");
+        panel.classList.remove("hidden");
+        card.className = "rounded-2xl border border-slate-200 bg-slate-50 p-5";
+        card.innerHTML = `
+          <div class="flex items-center gap-3 text-slate-500">
+            <svg class="w-4 h-4 animate-spin-slow text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+            </svg>
+            <span class="text-sm font-medium">Running back-translation accuracy check…</span>
+          </div>`;
+
+        // STEP 3: Back-translation (toLang → fromLang)
+        const back = await groqCall(
+          `You are a professional certified translator specialising in Indian languages.
+TASK: Translate the input text from ${toLang.name} back to ${fromLang.name}.
+STRICT RULES:
+- Output ONLY the translated text in ${fromLang.name} script. Nothing else.
+- Preserve meaning exactly. Do not add, remove, or paraphrase anything.`,
+          `Translate this ${toLang.name} text back to ${fromLang.name}: ${translated}`
+        );
+
+        // STEP 4: Score
+        const pct  = computeConfidence(text, back);
+        const tags = tagsFromScore(pct);
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+              <div id="conf-icon-wrap" class="p-2 rounded-xl">
+                <svg id="conf-icon" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </div>
+              <div>
+                <div class="text-xs font-bold uppercase tracking-widest text-slate-400">Translation Confidence</div>
+                <div id="conf-label" class="text-base font-bold text-slate-900 mt-0.5"></div>
+              </div>
+            </div>
+            <div class="text-right">
+              <div id="conf-pct" class="text-3xl font-display font-black"></div>
+              <div class="text-xs text-slate-400">probability</div>
+            </div>
+          </div>
+          <div class="w-full bg-slate-100 rounded-full h-3 mb-4 overflow-hidden">
+            <div id="conf-bar" class="h-3 rounded-full transition-all duration-700 ease-out" style="width:0%"></div>
+          </div>
+          <div class="flex flex-wrap gap-2 mb-3">
+            <span id="conf-tag-accuracy" class="px-3 py-1 rounded-full text-xs font-semibold"></span>
+            <span id="conf-tag-fluency"  class="px-3 py-1 rounded-full text-xs font-semibold"></span>
+            <span id="conf-tag-context"  class="px-3 py-1 rounded-full text-xs font-semibold"></span>
+          </div>
+          <div class="border-t border-slate-100 pt-3">
+            <p id="conf-reason" class="text-sm text-slate-600 leading-relaxed italic"></p>
+          </div>
+          <div class="mt-3 pt-3 border-t border-slate-100">
+            <details class="group">
+              <summary class="text-xs text-slate-400 cursor-pointer hover:text-slate-600 list-none flex items-center gap-1">
+                <svg class="w-3 h-3 transition-transform group-open:rotate-90" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                How was this calculated?
+              </summary>
+              <p id="conf-backtrans" class="mt-2 text-xs text-slate-500 bg-slate-50 rounded-lg p-2 font-mono leading-relaxed"></p>
+            </details>
+          </div>`;
+
+        renderConfidence(pct, tags, back);
+
+      } catch(err) {
+        console.error(err);
+        showError("Translation failed: " + err.message);
+        transIndicator.classList.add("hidden"); transIndicator.classList.remove("flex");
+        translationText.classList.remove("hidden");
+      }
+    }
+
+    function renderConfidence(pct, tags, back) {
+      let bar, border, icon, pctC, tagC;
+      if (pct>=72) { bar="bg-emerald-500"; border="border-emerald-200 bg-emerald-50/40"; icon="bg-emerald-100 text-emerald-600"; pctC="text-emerald-600"; tagC="bg-emerald-100 text-emerald-700"; }
+      else if(pct>=50) { bar="bg-amber-400"; border="border-amber-200 bg-amber-50/40"; icon="bg-amber-100 text-amber-600"; pctC="text-amber-600"; tagC="bg-amber-100 text-amber-700"; }
+      else { bar="bg-red-400"; border="border-red-200 bg-red-50/40"; icon="bg-red-100 text-red-600"; pctC="text-red-500"; tagC="bg-red-100 text-red-700"; }
+
+      document.getElementById("conf-card").className          = `rounded-2xl border p-5 transition-all duration-500 ${border}`;
+      document.getElementById("conf-icon-wrap").className     = `p-2 rounded-xl ${icon}`;
+      document.getElementById("conf-pct").className           = `text-3xl font-display font-black ${pctC}`;
+      document.getElementById("conf-pct").textContent         = pct + "%";
+      document.getElementById("conf-label").textContent       = tags.label;
+      document.getElementById("conf-reason").textContent      = tags.reason;
+      const confBar = document.getElementById("conf-bar");
+      confBar.className = `h-3 rounded-full transition-all duration-700 ease-out ${bar}`;
+      ["conf-tag-accuracy","conf-tag-fluency","conf-tag-context"].forEach(id => document.getElementById(id).className = `px-3 py-1 rounded-full text-xs font-semibold ${tagC}`);
+      document.getElementById("conf-tag-accuracy").textContent = tags.acc;
+      document.getElementById("conf-tag-fluency").textContent  = tags.flu;
+      document.getElementById("conf-tag-context").textContent  = tags.ctx;
+      const btEl = document.getElementById("conf-backtrans");
+      if (btEl) btEl.textContent = `Back-translated to ${fromLang.name}: "${back}"`;
+      setTimeout(() => { confBar.style.width = pct + "%"; }, 80);
+    }
+
+    function hideConfidence() { document.getElementById("confidence-panel").classList.add("hidden"); }
+
+    // ── Helpers ──
+    function setTranscript(text) {
+      const el    = document.getElementById("transcript-text");
+      const empty = document.getElementById("input-empty");
+      if (text) {
+        el.textContent = text;
+        el.className   = "text-base text-slate-900 leading-relaxed flex-1";
+        el.classList.remove("hidden");
+        if (empty) empty.style.display = "none";
+      } else {
+        el.classList.add("hidden");
+        if (empty) empty.style.display = "";
+        hideSteps();
+      }
+    }
+
+    function setTranslation(text) {
+      currentTranslation = text;
+      const el    = document.getElementById("translation-text");
+      const empty = document.getElementById("output-empty");
+      const copyBtn = document.getElementById("copy-top-btn");
+      if (text) {
+        el.textContent = text;
+        el.className   = "text-base text-slate-900 leading-relaxed flex-1 pr-2";
+        el.classList.remove("hidden");
+        if (empty) empty.style.display = "none";
+        speakBtn.classList.remove("hidden");
+        if (copyBtn) { copyBtn.classList.remove("hidden"); copyBtn.style.display = "flex"; }
+      } else {
+        el.classList.add("hidden");
+        if (empty) empty.style.display = "";
+        speakBtn.classList.add("hidden");
+        if (copyBtn) { copyBtn.style.display = "none"; }
+      }
+    }
+
+    // ── Text to Speech — Groq PlayAI (Atlas: formal, neutral, professional) ──
+    let currentAudio = null;
+
+    async function speakText() {
+      if (!currentTranslation) return;
+
+      // Stop any currently playing audio
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+
+      const speakIcon = document.getElementById("speak-icon");
+      const speakBtnEl = document.getElementById("speak-btn");
+
+      // Show loading state on button
+      speakBtnEl.disabled = true;
+      speakIcon.innerHTML = `
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>`;
+      speakBtnEl.classList.add("animate-spin-slow");
+
+      try {
+        const res = await fetch("https://api.groq.com/openai/v1/audio/speech", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${GROQ_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: "playai-tts",
+            voice: "Fritz-PlayAI",   // Deep, formal, professional male voice
+            input: currentTranslation,
+            response_format: "mp3"
+          })
+        });
+
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({}));
+          throw new Error(e?.error?.message || `TTS error ${res.status}`);
+        }
+
+        const blob = await res.blob();
+        const url  = URL.createObjectURL(blob);
+        currentAudio = new Audio(url);
+
+        // Reset button when done
+        currentAudio.onended = () => {
+          restoreSpeakBtn();
+          URL.revokeObjectURL(url);
+        };
+        currentAudio.onerror = () => restoreSpeakBtn();
+
+        // Show pause icon while playing
+        speakBtnEl.disabled = false;
+        speakBtnEl.classList.remove("animate-spin-slow");
+        speakIcon.innerHTML = `
+          <rect x="6" y="4" width="4" height="16" rx="1"/>
+          <rect x="14" y="4" width="4" height="16" rx="1"/>`;
+
+        currentAudio.play();
+
+      } catch (err) {
+        console.error(err);
+        // Graceful fallback to browser TTS
+        const utt = new SpeechSynthesisUtterance(currentTranslation);
+        utt.lang = toLang.code;
+        // Pick best available non-default voice
+        const voices = window.speechSynthesis.getVoices();
+        const preferred = voices.find(v =>
+          v.name.toLowerCase().includes("david") ||
+          v.name.toLowerCase().includes("daniel") ||
+          v.name.toLowerCase().includes("alex") ||
+          v.name.toLowerCase().includes("google uk english male")
+        );
+        if (preferred) utt.voice = preferred;
+        utt.rate = 0.92;
+        utt.pitch = 0.85;
+        window.speechSynthesis.speak(utt);
+        restoreSpeakBtn();
+      }
+    }
+
+    function restoreSpeakBtn() {
+      const speakBtnEl = document.getElementById("speak-btn");
+      const speakIcon  = document.getElementById("speak-icon");
+      speakBtnEl.disabled = false;
+      speakBtnEl.classList.remove("animate-spin-slow");
+      speakIcon.innerHTML = `
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <path d="M15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"/>`;
+      currentAudio = null;
+    }
+
+    function showError(msg) { errorText.textContent = msg; errorBox.classList.remove("hidden"); }
+    function clearError()   { errorBox.classList.add("hidden"); errorText.textContent = ""; }
+
+    // ── Init ──
+    setupRecognition();
+    updateOutputHeader();
+
+  </script>
+</body>
+</html>
