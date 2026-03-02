@@ -137,3 +137,7 @@ Web Speech API for speech-to-text processing
 Speech Synthesis API for English audio output
 
 Real-time JSON parsing and AI response orchestration
+
+this project is for design thinking cmru hackton
+
+group name - The Boys 
